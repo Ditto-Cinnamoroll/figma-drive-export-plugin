@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Macaron Asset Exporter</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --line: #d8dee9;
+      --text: #0f172a;
+      --muted: #475569;
+      --brand: #0a66ff;
+      --danger: #b42318;
+      --ok: #027a48;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 14px;
+      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 35%);
+      color: var(--text);
+      font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .small { color: var(--muted); font-size: 11px; }
+    .target-grid {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+    .target-option {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      font-weight: 600;
+    }
+    .target-option input {
+      width: auto;
+      margin: 0;
+      accent-color: var(--brand);
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .primary { background: var(--brand); color: #fff; }
+    .secondary { background: #fff; border-color: var(--line); color: var(--text); }
+
+    .status {
+      white-space: pre-wrap;
+      max-height: 160px;
+      overflow: auto;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fcfdff;
+    }
+
+    .ok { color: var(--ok); }
+    .error { color: var(--danger); }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 7px;
+      margin-right: 6px;
+      font-size: 11px;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Selection</h2>
+    <div class="row">
+      <span class="pill" id="selectedCount">Selected 0</span>
+      <span class="pill" id="eligibleCount">Matched 0</span>
+      <button class="secondary" id="refreshBtn">Refresh Selection</button>
+    </div>
+    <div id="eligibleNames" class="small"></div>
+  </div>
+
+  <div class="card">
+    <h2>Google Auth</h2>
+    <label for="googleClientId">OAuth Client ID</label>
+    <input id="googleClientId" placeholder="Google Cloud OAuth Client ID (TV and Limited Input recommended)" />
+    <label for="googleClientSecret" style="margin-top:8px;">OAuth Client Secret</label>
+    <input id="googleClientSecret" type="password" placeholder="Google Cloud OAuth Client Secret" />
+    <label for="allowedDomains" style="margin-top:8px;">Allowed Email Domains</label>
+    <input id="allowedDomains" placeholder="e.g. company.com, subsidiary.co.kr" />
+    <div class="small">Only users with these email domains can upload.</div>
+    <div class="row" style="margin-top:8px;">
+      <button class="secondary" id="authBtn">Sign in with Google (Browser)</button>
+      <span id="authState" class="small">Not signed in</span>
+    </div>
+    <div class="small">Clicking login opens your browser for Google approval.</div>
+    <div class="small">scope: drive.file + userinfo.email</div>
+  </div>
+
+  <div class="card">
+    <h2>Export Targets</h2>
+    <div class="target-grid">
+      <label class="target-option"><input type="checkbox" id="targetAndroid" checked />Android</label>
+      <label class="target-option"><input type="checkbox" id="targetIos" checked />iOS</label>
+      <label class="target-option"><input type="checkbox" id="targetWeb" checked />Web</label>
+    </div>
+    <div class="small">All selected by default. Choose only what you need.</div>
+  </div>
+
+  <div class="card">
+    <h2>Upload Folder Settings (Editable)</h2>
+
+    <label>Android mdpi</label>
+    <input id="androidMdpi" />
+    <label>Android hdpi</label>
+    <input id="androidHdpi" />
+    <label>Android xhdpi</label>
+    <input id="androidXhdpi" />
+    <label>Android xxhdpi</label>
+    <input id="androidXxhdpi" />
+    <label>Android xxxhdpi</label>
+    <input id="androidXxxhdpi" />
+
+    <label style="margin-top:8px;">iOS folder</label>
+    <input id="iosFolder" />
+    <label>Web folder</label>
+    <input id="webFolder" />
+
+    <div class="row" style="margin-top:8px;">
+      <button class="secondary" id="saveBtn">Save Settings</button>
+      <button class="primary" id="startBtn">Start Export + Drive Upload</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Progress</h2>
+    <div id="status" class="status">Idle</div>
+  </div>
+
+  <script>
+    const state = {
+      accessToken: '',
+      authEmail: '',
+      queue: [],
+      processing: false,
+      total: 0,
+      uploaded: 0,
+      failed: 0,
+      exportQueueDone: false
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function log(message, type = 'normal') {
+      const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+      const status = $('status');
+      if (type === 'error') {
+        status.innerHTML += `\n<span class="error">${line}</span>`;
+      } else if (type === 'ok') {
+        status.innerHTML += `\n<span class="ok">${line}</span>`;
+      } else {
+        status.innerHTML += `\n${line}`;
+      }
+      status.scrollTop = status.scrollHeight;
+    }
+
+    function parseFolderId(link) {
+      if (!link) return '';
+      const trimmed = link.trim();
+      const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+      if (folderMatch) return folderMatch[1];
+
+      if (/^[a-zA-Z0-9_-]{20,}$/.test(trimmed)) {
+        return trimmed;
+      }
+
+      try {
+        const url = new URL(trimmed);
+        const id = url.searchParams.get('id');
+        return id || '';
+      } catch (_e) {
+        return '';
+      }
+    }
+
+    function getSettings() {
+      return {
+        googleClientId: $('googleClientId').value.trim(),
+        googleClientSecret: $('googleClientSecret').value.trim(),
+        allowedEmailDomains: $('allowedDomains').value.trim(),
+        targets: {
+          android: $('targetAndroid').checked,
+          ios: $('targetIos').checked,
+          web: $('targetWeb').checked
+        },
+        android: {
+          mdpi: $('androidMdpi').value.trim(),
+          hdpi: $('androidHdpi').value.trim(),
+          xhdpi: $('androidXhdpi').value.trim(),
+          xxhdpi: $('androidXxhdpi').value.trim(),
+          xxxhdpi: $('androidXxxhdpi').value.trim()
+        },
+        iosFolder: $('iosFolder').value.trim(),
+        webFolder: $('webFolder').value.trim()
+      };
+    }
+
+    function setSettings(settings) {
+      $('googleClientId').value = settings.googleClientId || '';
+      $('googleClientSecret').value = settings.googleClientSecret || '';
+      $('allowedDomains').value = settings.allowedEmailDomains || '';
+      $('targetAndroid').checked = settings.targets ? settings.targets.android !== false : true;
+      $('targetIos').checked = settings.targets ? settings.targets.ios !== false : true;
+      $('targetWeb').checked = settings.targets ? settings.targets.web !== false : true;
+      $('androidMdpi').value = settings.android?.mdpi || '';
+      $('androidHdpi').value = settings.android?.hdpi || '';
+      $('androidXhdpi').value = settings.android?.xhdpi || '';
+      $('androidXxhdpi').value = settings.android?.xxhdpi || '';
+      $('androidXxxhdpi').value = settings.android?.xxxhdpi || '';
+      $('iosFolder').value = settings.iosFolder || '';
+      $('webFolder').value = settings.webFolder || '';
+    }
+
+    function refreshSelectionUi(payload) {
+      $('selectedCount').textContent = `Selected ${payload.selectedCount}`;
+      $('eligibleCount').textContent = `Matched ${payload.eligibleCount}`;
+      $('eligibleNames').textContent = payload.eligibleNames.length
+        ? payload.eligibleNames.join(', ')
+        : 'No selected layers match the ic_/img_ rule.';
+    }
+
+    function validateSettings(settings) {
+      const folderChecks = [];
+
+      if (!settings.googleClientId) {
+        return 'Please enter Google OAuth Client ID.';
+      }
+      if (!settings.googleClientSecret) {
+        return 'Please enter Google OAuth Client Secret.';
+      }
+      if (!parseAllowedDomains(settings.allowedEmailDomains).length) {
+        return 'Please enter at least one allowed email domain.';
+      }
+      if (!settings.targets.android && !settings.targets.ios && !settings.targets.web) {
+        return 'Select at least one target platform.';
+      }
+      if (settings.targets.android) {
+        folderChecks.push(
+          settings.android.mdpi,
+          settings.android.hdpi,
+          settings.android.xhdpi,
+          settings.android.xxhdpi,
+          settings.android.xxxhdpi
+        );
+      }
+      if (settings.targets.ios) {
+        folderChecks.push(settings.iosFolder);
+      }
+      if (settings.targets.web) {
+        folderChecks.push(settings.webFolder);
+      }
+
+      for (const link of folderChecks) {
+        if (!parseFolderId(link)) {
+          return `Invalid folder link/ID: ${link}`;
+        }
+      }
+
+      return '';
+    }
+
+    function parseAllowedDomains(raw) {
+      if (!raw) return [];
+      return raw
+        .split(/[,\n;\s]+/)
+        .map((v) => v.trim().toLowerCase().replace(/^@+/, ''))
+        .filter(Boolean);
+    }
+
+    async function uploadToDrive({ fileName, mimeType, folderId, bytes }) {
+      const escapedName = fileName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const query = `name='${escapedName}' and '${folderId}' in parents and trashed=false`;
+      const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1&orderBy=modifiedTime%20desc&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+      const listRes = await fetch(listUrl, {
+        headers: {
+          Authorization: `Bearer ${state.accessToken}`
+        }
+      });
+      if (!listRes.ok) {
+        const text = await listRes.text();
+        throw new Error(`Drive list failed (${listRes.status}): ${text}`);
+      }
+      const listData = await listRes.json();
+      const existing = listData.files && listData.files.length ? listData.files[0] : null;
+      log(`Drive match check: ${fileName} -> ${listData.files ? listData.files.length : 0} match(es)`);
+
+      if (existing && existing.id) {
+        const updateRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media&supportsAllDrives=true`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${state.accessToken}`,
+            'Content-Type': mimeType
+          },
+          body: new Blob([bytes], { type: mimeType })
+        });
+        if (!updateRes.ok) {
+          const text = await updateRes.text();
+          throw new Error(`Drive update failed (${updateRes.status}): ${text}`);
+        }
+        return { id: existing.id, overwritten: true };
+      }
+
+      const metadata = {
+        name: fileName,
+        parents: [folderId]
+      };
+
+      const boundary = 'figma_plugin_boundary_' + Math.random().toString(36).slice(2);
+      const bodyParts = [
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+        `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+        new Blob([bytes], { type: mimeType }),
+        `\r\n--${boundary}--`
+      ];
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${state.accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`
+        },
+        body: new Blob(bodyParts)
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Drive API ${res.status}: ${text}`);
+      }
+
+      const created = await res.json();
+      return { id: created.id, overwritten: false };
+    }
+
+    async function processQueue() {
+      if (state.processing) return;
+      state.processing = true;
+
+      while (state.queue.length > 0) {
+        const task = state.queue.shift();
+
+        try {
+          const folderId = parseFolderId(task.folderLink);
+          const result = await uploadToDrive({
+            fileName: task.fileName,
+            mimeType: task.mimeType,
+            folderId,
+            bytes: task.bytes
+          });
+          state.uploaded += 1;
+          if (result.overwritten) {
+            log(`Overwritten (${state.uploaded}/${state.total}) ${task.target} ${task.fileName}`, 'ok');
+          } else {
+            log(`Uploaded (${state.uploaded}/${state.total}) ${task.target} ${task.fileName}`, 'ok');
+          }
+        } catch (error) {
+          state.failed += 1;
+          log(`Upload failed ${task.fileName}: ${error.message || error}`, 'error');
+        }
+      }
+
+      state.processing = false;
+
+      if (state.exportQueueDone) {
+        log(`Done: success ${state.uploaded}, failed ${state.failed}, total ${state.total}`,
+          state.failed === 0 ? 'ok' : 'error');
+      }
+    }
+
+    $('refreshBtn').onclick = () => {
+      parent.postMessage({ pluginMessage: { type: 'refresh-selection' } }, '*');
+    };
+
+    $('saveBtn').onclick = () => {
+      const settings = getSettings();
+      const err = validateSettings(settings);
+      if (err) {
+        log(err, 'error');
+        return;
+      }
+
+      parent.postMessage({ pluginMessage: { type: 'save-settings', payload: settings } }, '*');
+      log('Save settings requested');
+    };
+
+    $('authBtn').onclick = () => {
+      const settings = getSettings();
+      const err = validateSettings(settings);
+      if (err) {
+        log(err, 'error');
+        return;
+      }
+      $('authState').textContent = 'Waiting for approval...';
+      log('Opening browser for Google approval...');
+      parent.postMessage({ pluginMessage: { type: 'start-auth', payload: settings } }, '*');
+    };
+
+    $('startBtn').onclick = () => {
+      const settings = getSettings();
+      const err = validateSettings(settings);
+      if (err) {
+        log(err, 'error');
+        return;
+      }
+
+      if (!state.accessToken) {
+        log('Please complete Google sign-in first.', 'error');
+        return;
+      }
+
+      state.queue = [];
+      state.processing = false;
+      state.total = 0;
+      state.uploaded = 0;
+      state.failed = 0;
+      state.exportQueueDone = false;
+      $('status').textContent = 'Starting export';
+
+      parent.postMessage({ pluginMessage: { type: 'start-export', payload: settings } }, '*');
+      log('Export request sent');
+    };
+
+    onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === 'init') {
+        setSettings(msg.payload.settings);
+        refreshSelectionUi(msg.payload);
+        log('Initialized');
+        return;
+      }
+
+      if (msg.type === 'selection-updated') {
+        refreshSelectionUi(msg.payload);
+        log('Selection updated');
+        return;
+      }
+
+      if (msg.type === 'settings-saved') {
+        log('Settings saved', 'ok');
+        return;
+      }
+
+      if (msg.type === 'auth-pending') {
+        $('authState').textContent = 'Waiting for approval...';
+        if (msg.payload.userCode) {
+          log(`Google user code: ${msg.payload.userCode}`);
+        }
+        if (msg.payload.verificationUrl) {
+          log(`Approval URL opened: ${msg.payload.verificationUrl}`);
+        }
+        return;
+      }
+
+      if (msg.type === 'auth-success') {
+        state.accessToken = msg.payload.accessToken;
+        state.authEmail = msg.payload.email;
+        $('authState').textContent = `Signed in (${msg.payload.email})`;
+        log(`Google sign-in success: ${msg.payload.email}`, 'ok');
+        return;
+      }
+
+      if (msg.type === 'auth-error') {
+        state.accessToken = '';
+        state.authEmail = '';
+        $('authState').textContent = 'Not signed in';
+        log(msg.payload, 'error');
+        return;
+      }
+
+      if (msg.type === 'export-error') {
+        log(msg.payload, 'error');
+        return;
+      }
+
+      if (msg.type === 'export-started') {
+        state.total = msg.payload.total;
+        log(`Export prepared. Total tasks: ${state.total}`);
+        return;
+      }
+
+      if (msg.type === 'upload-task') {
+        state.queue.push(msg.payload);
+        processQueue();
+        return;
+      }
+
+      if (msg.type === 'task-failed') {
+        state.failed += 1;
+        log(`Export failed ${msg.payload.fileName}: ${msg.payload.reason}`, 'error');
+        return;
+      }
+
+      if (msg.type === 'export-queued-done') {
+        state.exportQueueDone = true;
+        if (!state.processing && state.queue.length === 0) {
+          log(`Done: success ${state.uploaded}, failed ${state.failed}, total ${state.total}`,
+            state.failed === 0 ? 'ok' : 'error');
+        }
+      }
+    };
+  </script>
+</body>
+</html>
