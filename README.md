@@ -34,6 +34,8 @@
 ### 공개 저장소용 기본 상태
 - 이 저장소에는 기본 OAuth Client ID, OAuth Client Secret, 허용 이메일 도메인, Google Drive 폴더 링크가 포함되어 있지 않음
 - 사용 전 각 팀/사용자 환경에 맞는 값으로 직접 설정 필요
+- 로컬 보관용 값은 `.env.local`에 둘 수 있고, Git에는 올라가지 않음
+- 공유용 예시는 `.env.example` 참고
 
 ### 플랫폼 선택
 - Android / iOS / Web 체크박스로 대상 플랫폼 선택 가능
@@ -92,6 +94,8 @@ This plugin exports only selected layers/components whose names include `ic_` or
 ### Public Repository Default State
 - This repository does not include a default OAuth Client ID, OAuth Client Secret, allowed email domains, or Google Drive folder links
 - Configure your own values before using the plugin
+- You can keep local-only values in `.env.local`, which is ignored by Git
+- Use `.env.example` as the shared template
 
 ### Target Selection
 - Android / iOS / Web checkboxes are available
